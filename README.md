@@ -21,6 +21,7 @@ Community curated plugins for Core-Lightning.
 | [event-websocket][event-websocket]   | Exposes notifications over a Websocket                                                      |
 | [feeadjuster][feeadjuster]           | Dynamic fees to keep your channels more balanced                                            |
 | [go-lnmetrics.reporter][reporter]    | Collect and report of the lightning node metrics                                            |
+| [goodpeer][goodpeer]                 | Find low-fees peers to fund a channel with                                                  |
 | [graphql][graphql]                   | Exposes the Core-Lightning API over [graphql][graphql-spec]                                 |
 | [invoice-queue][invoice-queue]       | Listen to lightning invoices from multiple nodes and send to a redis queue for processing   |
 | [lightning-qt][lightning-qt]         | A bitcoin-qt-like GUI for lightningd                                                        |
@@ -231,3 +232,4 @@ Python plugins developers must ensure their plugin to work with all Python versi
 [blip12]: https://github.com/lightning/blips/blob/42cec1d0f66eb68c840443abb609a5a9acb34f8e/blip-0012.md
 [circular]: https://github.com/giovannizotta/circular
 [python-teos]: https://github.com/talaia-labs/python-teos
+[goodpeer]: https://github.com/lightningd/plugins/tree/master/goodpeer
