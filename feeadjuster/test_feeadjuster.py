@@ -162,7 +162,8 @@ def test_feeadjuster_imbalance(node_factory):
     # First bring channel to somewhat of a blanance
     amount = int(chan_total * 0.5)
     pay(l1, l3, amount)
-    l2.daemon.wait_for_log('Set default fees as imbalance is too low')
+    # No 'Set default fees' log here: Fees started as default, so no setting needed.
+    #l2.daemon.wait_for_log('Set default fees as imbalance is too low')
     for scid in l2_scids:
         sync_gossip(l3, l2, scid)
         sync_gossip(l1, l2, scid)
