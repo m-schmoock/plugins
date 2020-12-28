@@ -26,13 +26,16 @@ plugin.db = None
 plugin.count = 0
 plugin.tsi_cache = {}
 
+TS_VARIABLE = 1  # can be OHLC sampled
+TS_EVENT = 2     # can be added and averaged sampled
+
 migrations = [
-    "CREATE TABLE timeseries (id INTEGER PRIMARY KEY, name text)",
-    "CREATE TABLE data (id INTEGER, ts timestamp, value INTEGER,"
-    " FOREIGN KEY(id) REFERENCES timeseries(id)) ",
-    "CREATE INDEX idx_data_id ON data (id)",
+    "CREATE TABLE timeseries (id INTEGER PRIMARY KEY, name text UNIQUE, ts_type INTEGER NOT NULL)",
+    "CREATE TABLE data (ts timestamp, tsi INTEGER, value INTEGER,"
+    " FOREIGN KEY(tsi) REFERENCES timeseries(id)) ",
+    "CREATE INDEX idx_data_id ON data (tsi)",
     "CREATE INDEX idx_data_ts ON data (ts)",
-    "CREATE INDEX idx_data_idts ON data (id, ts)",
+    "CREATE INDEX idx_data_idts ON data (ts, tsi)",
 ]
 
 # Track all variables within a 15min sample
@@ -51,30 +54,51 @@ def wait_initialized():
         time.sleep(1)
 
 
-def get_tsi(name: str, create: bool = False):
+def ensure_tsi(name: str, ts_type: int):
+    """ ensures a give timeseries and type is known in the database """
+    if name in plugin.tsi_cache:
+        return plugin.tsi_cache[name]
+
+    cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
+    row = cursor.fetchone()
+    if row is not None:
+        plugin.tsi_cache[name] = row[0]
+        return row[0]
+
+    plugin.db.execute("INSERT INTO timeseries (name, ts_type) VALUES (?, ?)", (name, ts_type))
+    plugin.db.commit()
+    cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
+    row = cursor.fetchone()
+    plugin.tsi_cache[name] = row[0]
+    return row[0]
+
+
+def get_tsi(name: str):
     """ get a (cached) timeseries index """
     if name in plugin.tsi_cache:
         return plugin.tsi_cache[name]
     cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
     row = cursor.fetchone()
     if row is None:
-        if not create:
-            raise ValueError("unknown timeseries")
-        plugin.db.execute("INSERT INTO timeseries (name) VALUES (?)", (name,))
-        plugin.db.commit()
-        cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
-        row = cursor.fetchone()
+        raise ValueError("unknown timeseries")
     plugin.tsi_cache[name] = row[0]
     return row[0]
 
 
-def add_sample(name: str, value: int = None):
-    """ Increments a value within the current sample """
-    if value is None:
-        value = 1
+def ts_variable(name: str, value: int):
+    """ Sets a variable for the current sample """
+    ensure_tsi(name, TS_VARIABLE)
     if type(value) is not int:
         value = int(value)
-    sample[name] = sample.get(name, 0) + value
+    sample[name] = value
+
+
+def ts_event(name: str):
+    """ Increments an event counter within the current sample """
+    if plugin.initialized is False:
+        return
+    ensure_tsi(name, TS_EVENT)
+    sample[name] = sample.get(name, 0) + 1
 
 
 def store_sample():
@@ -82,8 +106,8 @@ def store_sample():
     ts = datetime.now()
     for name in sample:
         value = sample[name]
-        plugin.db.execute("INSERT INTO data (id, ts, value) VALUES (?, ?, ?)",
-                          (get_tsi(name, True), ts, value))
+        plugin.db.execute("INSERT INTO data (ts, tsi, value) VALUES (?, ?, ?)",
+                          (ts, get_tsi(name), value))
 
 
 def reset_sample():
@@ -102,7 +126,7 @@ def get_data(name: str, tsfrom: datetime, tsto: datetime):
         tsfrom = datetime.fromisoformat(tsfrom)
     if type(tsto) is str:
         tsto = datetime.fromisoformat(tsto)
-    return plugin.db.execute("SELECT * FROM data WHERE id = ? and ts >= ? and ts <= ?",
+    return plugin.db.execute("SELECT * FROM data WHERE tsi = ? and ts >= ? and ts <= ?",
                              (get_tsi(name), tsfrom, tsto))
 
 
@@ -181,20 +205,20 @@ def job(plugin: Plugin):
         if not active_channel and p['connected']:
             num_gossipers += 1
 
-    add_sample('getinfo_num_peers', info['num_peers'])
-    add_sample('getinfo_num_pending_channels', info['num_pending_channels'])
-    add_sample('getinfo_num_active_channels', info['num_active_channels'])
-    add_sample('getinfo_num_inactive_channels', info['num_inactive_channels'])
-    add_sample('getinfo_fees_collected_msat', info['fees_collected_msat'])
+    ts_variable('getinfo_num_peers', info['num_peers'])
+    ts_variable('getinfo_num_pending_channels', info['num_pending_channels'])
+    ts_variable('getinfo_num_active_channels', info['num_active_channels'])
+    ts_variable('getinfo_num_inactive_channels', info['num_inactive_channels'])
+    ts_variable('getinfo_fees_collected_msat', info['fees_collected_msat'])
 
-    add_sample('summary_num_utxos', len(utxos))
-    add_sample('summary_utxo_amount', Millisatoshi(sum(utxos)))
-    add_sample('summary_num_channels', num_channels)
-    add_sample('summary_num_connected', num_connected)
-    add_sample('summary_num_gossipers', num_gossipers)
-    add_sample('summary_avail_total', avail_out + avail_in)
-    add_sample('summary_avail_out', avail_out)
-    add_sample('summary_avail_in', avail_in)
+    ts_variable('summary_num_utxos', len(utxos))
+    ts_variable('summary_utxo_amount', Millisatoshi(sum(utxos)))
+    ts_variable('summary_num_channels', num_channels)
+    ts_variable('summary_num_connected', num_connected)
+    ts_variable('summary_num_gossipers', num_gossipers)
+    ts_variable('summary_avail_total', avail_out + avail_in)
+    ts_variable('summary_avail_out', avail_out)
+    ts_variable('summary_avail_in', avail_in)
 
     store_sample()
     reset_sample()
@@ -215,18 +239,18 @@ def scheduler(plugin: Plugin):
 
 @plugin.subscribe("forward_event")
 def forward_event(plugin: Plugin, forward_event: dict, **kwargs):
-    add_sample('forward_event')
+    ts_event('forward_event')
 
 
 @plugin.hook('db_write')
 def on_db_write(writes, data_version, plugin, **kwargs):
-    add_sample('db_write')
+    ts_event('db_write')
     return {"result": "continue"}
 
 
 @plugin.hook('htlc_accepted')
 def on_htlc_accepted(onion, htlc, plugin, **kwargs):
-    add_sample('htlc_accepted')
+    ts_event('htlc_accepted')
     return {"result": "continue"}
 
 
