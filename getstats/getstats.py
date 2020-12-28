@@ -24,7 +24,8 @@ plugin = Plugin()
 plugin.initialized = False
 plugin.db = None
 plugin.count = 0
-plugin.tsi_cache = {}
+plugin.tsi = {}
+plugin.tst = {}
 
 TS_VARIABLE = 1  # can be OHLC sampled
 TS_EVENT = 2     # can be added and averaged sampled
@@ -56,32 +57,36 @@ def wait_initialized():
 
 def ensure_tsi(name: str, ts_type: int):
     """ ensures a give timeseries and type is known in the database """
-    if name in plugin.tsi_cache:
-        return plugin.tsi_cache[name]
+    if name in plugin.tsi:
+        return plugin.tsi[name]
 
-    cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
+    cursor = plugin.db.execute("SELECT id, ts_type from timeseries WHERE name = ? and ts_type = ?",
+                               (name, ts_type))
     row = cursor.fetchone()
     if row is not None:
-        plugin.tsi_cache[name] = row[0]
+        plugin.tsi[name] = row[0]
+        plugin.tst[name] = row[1]
         return row[0]
 
     plugin.db.execute("INSERT INTO timeseries (name, ts_type) VALUES (?, ?)", (name, ts_type))
     plugin.db.commit()
-    cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
+    cursor = plugin.db.execute("SELECT id, ts_type from timeseries WHERE name = ?", (name,))
     row = cursor.fetchone()
-    plugin.tsi_cache[name] = row[0]
+    plugin.tsi[name] = row[0]
+    plugin.tst[name] = row[1]
     return row[0]
 
 
 def get_tsi(name: str):
     """ get a (cached) timeseries index """
-    if name in plugin.tsi_cache:
-        return plugin.tsi_cache[name]
-    cursor = plugin.db.execute("SELECT id from timeseries WHERE name = ?", (name,))
+    if name in plugin.tsi:
+        return plugin.tsi[name]
+    cursor = plugin.db.execute("SELECT id, ts_type from timeseries WHERE name = ?", (name,))
     row = cursor.fetchone()
     if row is None:
         raise ValueError("unknown timeseries")
-    plugin.tsi_cache[name] = row[0]
+    plugin.tsi[name] = row[0]
+    plugin.tst[name] = row[1]
     return row[0]
 
 
@@ -259,14 +264,43 @@ def get_stats(plugin: Plugin, name: str, tsfrom: str = None, tsto: str = None):
     """ Returns captured getstats timeseries data """
     check_initialized()
     rows = get_data(name, tsfrom, tsto).fetchall()
-    return rows
+
+    result = {
+        "timeseries": name,
+        "type": "TS_VARIABLE" if plugin.tst[name] == TS_VARIABLE else "TS_EVENT",
+        "samplesize": "15min",
+        "from": None,
+        "to": None,
+        "data": {
+        }
+    }
+
+    # assemble result
+    # TODO: speedup timestamp handling
+    for row in rows:
+        ts = datetime.fromisoformat(row[0])
+        if result["from"] is None or ts < datetime.fromisoformat(result["from"]):
+            result["from"] = str(ts)
+        if result["to"] is None or ts > datetime.fromisoformat(result["to"]):
+            result["to"] = str(ts)
+        result["data"][row[0]] = row[2]
+    return result
 
 
 @plugin.method('gettimeseries')
 def get_timeseries(plugin: Plugin):
     """ Returns the names of all known getstats timeseries """
     check_initialized()
-    return plugin.db.execute("SELECT name from timeseries").fetchall()
+    rows = plugin.db.execute("SELECT name, ts_type from timeseries").fetchall()
+    result = {
+        "timeseries": []
+    }
+    for row in rows:
+        result["timeseries"].append({
+            "name": row[0],
+            "type": "VARIABLE" if row[1] == TS_VARIABLE else "EVENT",
+        })
+    return result
 
 
 @plugin.init()
