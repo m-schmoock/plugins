@@ -19,6 +19,7 @@ Community curated plugins for Core-Lightning.
 | [drain][drain]                       | Draining, filling and balancing channels with automatic chunks.                             |
 | [event-websocket][event-websocket]   | Exposes notifications over a Websocket                                                      |
 | [feeadjuster][feeadjuster]           | Dynamic fees to keep your channels more balanced                                            |
+| [forwardstats][forwardstats]         | Keeps you informed about your nodes forwarding performance per channels                     |
 | [go-lnmetrics.reporter][reporter]    | Collect and report of the lightning node metrics                                            |
 | [graphql][graphql]                   | Exposes the Core-Lightning API over [graphql][graphql-spec]                                 |
 | [invoice-queue][invoice-queue]       | Listen to lightning invoices from multiple nodes and send to a redis queue for processing   |
@@ -242,3 +243,4 @@ un-archive it.
 [blip12]: https://github.com/lightning/blips/blob/42cec1d0f66eb68c840443abb609a5a9acb34f8e/blip-0012.md
 [circular]: https://github.com/giovannizotta/circular
 [python-teos]: https://github.com/talaia-labs/python-teos
+[forwardstats]: https://github.com/lightningd/plugins/tree/master/forwardstats
